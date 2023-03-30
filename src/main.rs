@@ -1,4 +1,4 @@
-use crate::keys::KeyManager;
+use crate::keys::{KeyManager, N_DEFAULT};
 
 mod keys;
 
@@ -7,8 +7,9 @@ fn main() {
 
     println!("Generating new state...");
     let mgr = KeyManager::default();
-    let mut state = mgr.generate_random();
+    let mut state = mgr.generate_random(N_DEFAULT).unwrap();
 
+    println!("Levels: {}", state.levels());
     println!(
         "Current secret key: \t {:?}",
         state.current_visible_secret_key().unwrap()

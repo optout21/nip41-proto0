@@ -1,3 +1,5 @@
+/// Key management code
+///
 use rand::thread_rng;
 use secp256k1::hashes::{sha256, Hash};
 use secp256k1::{All, KeyPair, Parity, Scalar, Secp256k1, SecretKey, XOnlyPublicKey};
@@ -22,12 +24,16 @@ impl LevelKeys {
 }
 
 /// Default number of pre-generated key level
-const N: usize = 256;
+pub const N_DEFAULT: usize = 256;
+/// Minimum accepted levels
+pub const N_MIN: usize = 10;
+/// Maximum accepted levels
+pub const N_MAX: usize = 1000000;
 
 /// Complete state of NIP-41 keys
 pub struct KeyState {
-    /// The sequence of keys
-    k: [LevelKeys; N],
+    /// The N key levels
+    k: Vec<LevelKeys>,
     /// The current level, initially N-1
     n: usize,
 }
@@ -36,6 +42,10 @@ pub struct KeyState {
 pub enum Error {
     /// No more levels left, ran out of pre-defined keys
     NoMoreKeyLevels,
+    /// Levels number too small
+    LevelsTooLow,
+    /// Levels number too high
+    LevelsTooHigh,
 }
 
 impl KeyState {
@@ -47,6 +57,10 @@ impl KeyState {
     /// Obtain the current secret key; security sensitive!
     pub fn current_visible_secret_key(&self) -> Result<SecretKey, Error> {
         Ok(self.k[self.n].vis.secret_key())
+    }
+
+    pub fn levels(&self) -> usize {
+        self.k.len()
     }
 
     /// Invalidate the current key; reveal it's secret counterpart, and switch to a new one (the previous one in the pre-generated levels).
@@ -86,10 +100,28 @@ impl KeyManager {
     }
 
     /// Generate a new random state
-    pub fn generate_random(&self) -> KeyState {
+    pub fn generate_random(&self, levels: usize) -> Result<KeyState, Error> {
+        if levels < N_MIN {
+            return Err(Error::LevelsTooLow);
+        }
+        if levels > N_MAX {
+            return Err(Error::LevelsTooHigh);
+        }
+
+        // generate hidden keys
+        let mut sk = Vec::new();
+        // TODO HD/derivation of sk_t's
+        for _i in 0..levels {
+            sk.push(SecretKey::new(&mut thread_rng()));
+        }
+        self.generate_internal(sk)
+    }
+
+    /// Generate state, hidden secret keys are supplied. Their number also specifies the levels.
+    fn generate_internal(&self, sk: Vec<SecretKey>) -> Result<KeyState, Error> {
         let mut keys: Vec<LevelKeys> = Vec::new();
 
-        let sk_0_hid = SecretKey::new(&mut thread_rng());
+        let sk_0_hid = sk[0];
         let sk_0_vis = sk_0_hid.clone();
         let mut current = LevelKeys {
             vis: KeyPair::from_secret_key(&self.secp, &sk_0_vis),
@@ -97,20 +129,15 @@ impl KeyManager {
         };
         keys.push(current);
 
-        for _i in 1..N {
-            // TODO HD/derivation of sk_t's
-            let sk_next_hid = SecretKey::new(&mut thread_rng());
-            let next = self.next_level(&current, &sk_next_hid);
+        let levels = sk.len();
+        for i in 1..levels {
+            let next = self.next_level(&current, &sk[i]);
             keys.push(next);
             current = next;
         }
 
-        KeyState {
-            k: keys
-                .try_into()
-                .unwrap_or_else(|_v| panic!("Wrong vector size")),
-            n: N - 1,
-        }
+        let n = levels - 1;
+        Ok(KeyState { k: keys, n })
     }
 
     /// Compute the hash of the concatenation of two public keys (X coordinates)
@@ -167,7 +194,7 @@ impl KeyManager {
 
 #[cfg(test)]
 mod test {
-    use super::{Error, KeyManager, LevelKeys};
+    use super::{Error, KeyManager, LevelKeys, N_DEFAULT};
     use secp256k1::{KeyPair, Scalar, Secp256k1, SecretKey};
 
     /// Some constant, random-generated keys
@@ -191,7 +218,10 @@ mod test {
     #[test]
     fn generate_and_current() {
         let mgr = KeyManager::default();
-        let state = mgr.generate_random();
+        let state = mgr.generate_random(N_DEFAULT).unwrap();
+
+        assert_eq!(state.levels(), 256);
+
         let sk = state.current_visible_secret_key().unwrap();
         let pk = state.current_visible_pubkey().unwrap();
         // check sk-pk
@@ -204,7 +234,7 @@ mod test {
     #[test]
     fn invalidate_and_verify() {
         let mgr = KeyManager::default();
-        let mut state = mgr.generate_random();
+        let mut state = mgr.generate_random(N_DEFAULT).unwrap();
         let pk = state.current_visible_pubkey().unwrap();
         // do an invalidate
         let (invalid, invalid_hid, new) = state.invalidate().unwrap();
@@ -217,7 +247,8 @@ mod test {
     #[test]
     fn invalidate_and_verify_many() {
         let mgr = KeyManager::default();
-        let mut state = mgr.generate_random();
+        let mut state = mgr.generate_random(N_DEFAULT).unwrap();
+        assert_eq!(state.levels(), 256);
         // do 255 invalidates
         for _i in 0..255 {
             let pk = state.current_visible_pubkey().unwrap();

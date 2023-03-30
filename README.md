@@ -26,7 +26,6 @@ Operations:
 
 ## TODO
 
-- Make N non-const
 - HD Hidden key generation (BIP-32)
 - Create Invalidation message
 - Persist state to file
