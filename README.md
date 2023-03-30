@@ -1,4 +1,4 @@
-# NIP-41 Prototype
+# NIP-41 Key Invalidation Prototype
 
 NIP-41 is a proposal for a scheme whereby a Nostr identity key can be invalidated to a new one safely.
 https://github.com/nostr-protocol/nips/pull/158

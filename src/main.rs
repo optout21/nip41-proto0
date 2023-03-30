@@ -1,4 +1,4 @@
-use crate::keys::{KeyManager, N_DEFAULT};
+use crate::keys::KeyManager;
 
 mod keys;
 
@@ -7,7 +7,7 @@ fn main() {
 
     println!("Generating new state...");
     let mgr = KeyManager::default();
-    let mut state = mgr.generate_random(N_DEFAULT).unwrap();
+    let mut state = mgr.generate_random().unwrap();
 
     println!("Levels: {}", state.levels());
     println!(
