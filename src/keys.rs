@@ -1,6 +1,7 @@
 /// Key management code
 ///
-use rand::thread_rng;
+use bip32::{ChildNumber, XPrv};
+use rand::{thread_rng, RngCore};
 use secp256k1::hashes::{sha256, Hash};
 use secp256k1::{All, KeyPair, Parity, Scalar, Secp256k1, SecretKey, XOnlyPublicKey};
 
@@ -34,10 +35,14 @@ pub struct KeyState {
     n: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     /// No more levels left, ran out of pre-defined keys
+    #[error("No more levels left, ran out of pre-defined keys")]
     NoMoreKeyLevels,
+    /// Error generating keys from seed
+    #[error(transparent)]
+    Bip32(#[from] bip32::Error),
 }
 
 impl KeyState {
@@ -93,17 +98,27 @@ impl KeyManager {
 
     /// Generate a new random state
     pub fn generate_random(&self) -> Result<KeyState, Error> {
-        // generate hidden keys
+        let mut master_seed: [u8; 64] = [0; 64];
+        thread_rng().fill_bytes(&mut master_seed);
+        self.generate_from_master_seed(master_seed)
+    }
+
+    /// Generate state from a 64-byte master seed
+    pub fn generate_from_master_seed(&self, master_seed: [u8; 64]) -> Result<KeyState, Error> {
+        // generate hidden keys HD (hierarchically deterministically, BIP32)
         let mut sk = Vec::new();
-        // TODO HD/derivation of sk_t's
-        for _i in 0..N_DEFAULT {
-            sk.push(SecretKey::new(&mut thread_rng()));
+        // for optimization, derive common part only once
+        let intermediate_key = XPrv::derive_from_path(&master_seed, &"m/44'/1237'/41'".parse()?)?;
+        for i in 0..N_DEFAULT {
+            // Derive a child key
+            let child = intermediate_key.derive_child(ChildNumber::new(i as u32, true)?)?;
+            sk.push(SecretKey::from_slice(&child.private_key().to_bytes()).unwrap());
         }
-        self.generate_internal(sk)
+        self.generate_levels_internal(sk)
     }
 
     /// Generate state, hidden secret keys are supplied. Their number also specifies the levels.
-    fn generate_internal(&self, sk: Vec<SecretKey>) -> Result<KeyState, Error> {
+    fn generate_levels_internal(&self, sk: Vec<SecretKey>) -> Result<KeyState, Error> {
         let mut keys: Vec<LevelKeys> = Vec::new();
 
         let sk_0_hid = sk[0];
@@ -172,8 +187,7 @@ impl KeyManager {
             .x_only_public_key()
             .0;
         // Compare
-        (pk_next_odd.serialize() == next_visible.serialize())
-            || (pk_next_even.serialize() == next_visible.serialize())
+        (pk_next_odd == *next_visible) || (pk_next_even == *next_visible)
     }
 }
 
@@ -186,6 +200,7 @@ mod test {
     const KEY1: &str = "0b441d3662962b4060e15801da6edbf017c14574a03ce8076ceb565fbdad12c1";
     const KEY2: &str = "c6431e41a67ca926e2c1b7356b9266642d3e039df9f3b428586910305c522635";
     const KEY3: &str = "26d5cf30786a9d2c6f6ef3dffa687257d5ec3baae9e30a3f74d96bbae192f3a7";
+    const SEED1: &str = "4a452d8daa6e997ff65bf681262a61b5cadb0ec65989adc594f52cabc96747a19fc6b21bc4db3d9dad553beadc56156b38c377a92d6952dcd2f5d2fe874a2985";
 
     fn default_keyset_1_and_2(mgr: &KeyManager) -> LevelKeys {
         LevelKeys {
@@ -201,7 +216,7 @@ mod test {
     }
 
     #[test]
-    fn generate_and_current() {
+    fn generate_random_get_current() {
         let mgr = KeyManager::default();
         let state = mgr.generate_random().unwrap();
 
@@ -269,6 +284,25 @@ mod test {
             // this is the wrong value here
             &current.hid_pubkey(),
         ));
+    }
+
+    #[test]
+    fn generate_master_seed() {
+        let master_seed: [u8; 64] = hex::decode(SEED1).unwrap().try_into().unwrap();
+
+        let mgr = KeyManager::default();
+        let state1 = mgr.generate_from_master_seed(master_seed).unwrap();
+
+        let pk1 = state1.current_visible_pubkey().unwrap();
+        assert_eq!(
+            hex::encode(pk1.serialize()),
+            "ed38c53f8e4eadaebc796b40e97ffb8808f78798d5219b9dfe5e341e89e411ee"
+        );
+
+        // Generate again. result should be same (deterministic)
+        let state2 = mgr.generate_from_master_seed(master_seed).unwrap();
+        let pk2 = state2.current_visible_pubkey().unwrap();
+        assert_eq!(pk1, pk2);
     }
 
     #[test]

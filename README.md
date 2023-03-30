@@ -33,9 +33,9 @@ Operations:
 
 ## TODO
 
-- HD Hidden key generation (BIP-32)
 - Create Invalidation message
 - Persist state to file
+- Use BIP39 menmonic for master seed generation
 
 
 ## Contact
