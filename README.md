@@ -24,9 +24,21 @@ Operations:
 - verify: verify validity of new key
 
 
+## Building and Running
+
+- Prerequisite: `rust`
+
+- Simply run:  `cargo run`
+
+
 ## TODO
 
 - HD Hidden key generation (BIP-32)
 - Create Invalidation message
 - Persist state to file
+
+
+## Contact
+
+Nostr: optout@nostrplebs.com npub1kxgpwh80gp79j0chc925srk6rghw0akggduwau8fwdflslh9jvqqd3lecx
 
