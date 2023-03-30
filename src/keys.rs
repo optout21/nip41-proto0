@@ -348,7 +348,7 @@ mod test {
         // tweaked public key
         let pk3 = pk1.add_tweak(&secp, diff).unwrap().0;
         // the two should match
-        assert_eq!(hex::encode(&pk2.serialize()), hex::encode(&pk3.serialize()));
+        assert_eq!(pk2, pk3);
     }
 
     #[test]
@@ -390,7 +390,7 @@ mod test {
             "e00d187b6f23ce28dad827ad336a3fb885146c1679c0d856cb0d4f094ae057c0"
         );
         // the two should be the same
-        assert_eq!(hex::encode(&pk2.serialize()), hex::encode(&pk3.serialize()),);
+        assert_eq!(pk2, pk3);
     }
 
     #[test]

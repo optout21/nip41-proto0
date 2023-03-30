@@ -35,6 +35,7 @@ Operations:
 
 - Create Invalidation message
 - Persist state to file
+- Cmdline options: generate invalidate
 - Use BIP39 menmonic for master seed generation
 
 
