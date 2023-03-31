@@ -4,6 +4,9 @@ mod keys;
 
 fn main() {
     println!("NIP-41 Proto 0");
+    println!();
+    println!("WARNING: This is a prototype implementation, use it only with test keys!");
+    println!();
 
     println!("Generating new state...");
     let mgr = KeyManager::default();
