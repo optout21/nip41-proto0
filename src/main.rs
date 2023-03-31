@@ -22,7 +22,7 @@ fn main() {
         state.current_visible_pubkey().unwrap()
     );
 
-    let (a, ah, b) = state.invalidate().unwrap();
+    let (a, ah, b, _a_vec) = state.invalidate().unwrap();
     println!("Invalidated:     \t {:?}", a);
     println!("     hidden:     \t {:?}", ah);
     println!("         to:     \t {:?}", b);

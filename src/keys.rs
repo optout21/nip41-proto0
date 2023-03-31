@@ -64,25 +64,41 @@ impl KeyState {
         self.k.len()
     }
 
-    /// Invalidate the current key; reveal it's secret counterpart, and switch to a new one (the previous one in the pre-generated levels).
-    /// Returns 3 pubkeys:
+    /// Invalidate the current key; reveal it's secret counterpart,
+    /// and (optionally) switch to a new one (the previous one in the pre-generated levels).
+    /// Returns these pubkeys:
     /// - the key being invalidated
     /// - its hidden counterpart
     /// - the new key
+    /// - a list of all previous invalidated keys (including the one invalidated just now, plus any earlier ones)
     pub fn invalidate(
         &mut self,
-    ) -> Result<(XOnlyPublicKey, XOnlyPublicKey, XOnlyPublicKey), Error> {
+    ) -> Result<
+        (
+            XOnlyPublicKey,
+            XOnlyPublicKey,
+            XOnlyPublicKey,
+            Vec<XOnlyPublicKey>,
+        ),
+        Error,
+    > {
         if self.n == 0 {
             // No more keys to invalidate to
             return Err(Error::NoMoreKeyLevels);
         }
         let n_prev = self.n;
+        let n_post = self.n - 1;
         // Switch to 'previous' key
-        self.n = self.n - 1;
+        self.n = n_post;
         Ok((
             self.k[n_prev].vis_pubkey(),
             self.k[n_prev].hid_pubkey(),
-            self.k[self.n].vis_pubkey(),
+            self.k[n_post].vis_pubkey(),
+            self.k[n_prev..self.levels()]
+                .to_vec()
+                .iter()
+                .map(|kl| kl.vis_pubkey())
+                .collect(),
         ))
     }
 }
@@ -255,8 +271,10 @@ mod test {
         let mut state = mgr.generate_random().unwrap();
         let pk = state.current_visible_pubkey().unwrap();
         // do an invalidate
-        let (invalid, invalid_hid, new) = state.invalidate().unwrap();
+        let (invalid, invalid_hid, new, invalid_vec) = state.invalidate().unwrap();
         assert_eq!(invalid, pk);
+        assert_eq!(invalid_vec.len(), 1);
+        assert_eq!(invalid_vec[0], pk);
         // verify
         let verify_result = mgr.verify(&invalid, &invalid_hid, &new);
         assert!(verify_result);
@@ -268,10 +286,11 @@ mod test {
         let mut state = mgr.generate_random().unwrap();
         assert_eq!(state.levels(), 256);
         // do 255 invalidates
-        for _i in 0..255 {
+        for i in 0..255 {
             let pk = state.current_visible_pubkey().unwrap();
-            let (invalid, invalid_hid, new) = state.invalidate().unwrap();
+            let (invalid, invalid_hid, new, invalid_vec) = state.invalidate().unwrap();
             assert_eq!(invalid, pk);
+            assert_eq!(invalid_vec.len(), i + 1);
             // verify
             let verify_result = mgr.verify(&invalid, &invalid_hid, &new);
             assert!(verify_result);
