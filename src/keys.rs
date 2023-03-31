@@ -89,8 +89,10 @@ impl KeyState {
         }
         let n_prev = self.n;
         let n_post = self.n - 1;
-        // Switch to 'previous' key
-        self.n = n_post;
+        // Commit, switch to 'previous' key
+        if commit {
+            self.n = n_post;
+        }
         Ok((
             self.k[n_prev].vis_pubkey(),
             self.k[n_prev].hid_pubkey(),
@@ -271,14 +273,22 @@ mod test {
         let mgr = KeyManager::default();
         let mut state = mgr.generate_random().unwrap();
         let pk = state.current_visible_pubkey().unwrap();
-        // do an invalidate
+        // do an invalidate, don't commit
         let (invalid, invalid_hid, new, invalid_vec) = state.invalidate(false).unwrap();
         assert_eq!(invalid, pk);
         assert_eq!(invalid_vec.len(), 1);
         assert_eq!(invalid_vec[0], pk);
+
         // verify
         let verify_result = mgr.verify(&invalid, &invalid_hid, &new);
         assert!(verify_result);
+
+        // invalidation was not committed, current does not change
+        assert_eq!(state.current_visible_pubkey().unwrap(), pk);
+
+        // invoke it again, this time committing
+        let _ = state.invalidate(true);
+        assert_eq!(state.current_visible_pubkey().unwrap(), new);
     }
 
     #[test]
@@ -297,7 +307,10 @@ mod test {
             assert!(verify_result);
         }
         // try another one, should fail
-        assert_eq!(state.invalidate(true).err().unwrap(), Error::NoMoreKeyLevels);
+        assert_eq!(
+            state.invalidate(true).err().unwrap(),
+            Error::NoMoreKeyLevels
+        );
     }
 
     #[test]
