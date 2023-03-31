@@ -73,6 +73,7 @@ impl KeyState {
     /// - a list of all previous invalidated keys (including the one invalidated just now, plus any earlier ones)
     pub fn invalidate(
         &mut self,
+        commit: bool,
     ) -> Result<
         (
             XOnlyPublicKey,
@@ -271,7 +272,7 @@ mod test {
         let mut state = mgr.generate_random().unwrap();
         let pk = state.current_visible_pubkey().unwrap();
         // do an invalidate
-        let (invalid, invalid_hid, new, invalid_vec) = state.invalidate().unwrap();
+        let (invalid, invalid_hid, new, invalid_vec) = state.invalidate(false).unwrap();
         assert_eq!(invalid, pk);
         assert_eq!(invalid_vec.len(), 1);
         assert_eq!(invalid_vec[0], pk);
@@ -288,7 +289,7 @@ mod test {
         // do 255 invalidates
         for i in 0..255 {
             let pk = state.current_visible_pubkey().unwrap();
-            let (invalid, invalid_hid, new, invalid_vec) = state.invalidate().unwrap();
+            let (invalid, invalid_hid, new, invalid_vec) = state.invalidate(true).unwrap();
             assert_eq!(invalid, pk);
             assert_eq!(invalid_vec.len(), i + 1);
             // verify
@@ -296,7 +297,7 @@ mod test {
             assert!(verify_result);
         }
         // try another one, should fail
-        assert_eq!(state.invalidate().err().unwrap(), Error::NoMoreKeyLevels);
+        assert_eq!(state.invalidate(true).err().unwrap(), Error::NoMoreKeyLevels);
     }
 
     #[test]
