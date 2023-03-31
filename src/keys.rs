@@ -1,6 +1,7 @@
 /// Key management code
 ///
 use bip32::{ChildNumber, XPrv};
+use bip39::Mnemonic;
 use rand::{thread_rng, RngCore};
 use secp256k1::hashes::{sha256, Hash};
 use secp256k1::{All, KeyPair, Parity, Scalar, Secp256k1, SecretKey, XOnlyPublicKey};
@@ -43,6 +44,9 @@ pub enum Error {
     /// Error generating keys from seed
     #[error(transparent)]
     Bip32(#[from] bip32::Error),
+    /// Error processing BIP39 mnemonic
+    #[error(transparent)]
+    Bip39(#[from] bip39::Error),
 }
 
 impl KeyState {
@@ -98,9 +102,22 @@ impl KeyManager {
 
     /// Generate a new random state
     pub fn generate_random(&self) -> Result<KeyState, Error> {
-        let mut master_seed: [u8; 64] = [0; 64];
-        thread_rng().fill_bytes(&mut master_seed);
-        self.generate_from_master_seed(master_seed)
+        let mut entropy: [u8; 32] = [0; 32];
+        thread_rng().fill_bytes(&mut entropy);
+        let mnemonic = Mnemonic::from_entropy(&entropy)?;
+        self.generate_from_mnemonic_internal(&mnemonic)
+    }
+
+    /// Generate state from a BIP-39 mnemonic (string)
+    pub fn generate_from_mnemonic(&self, mnemonic_str: &str) -> Result<KeyState, Error> {
+        let mnemonic = Mnemonic::parse(mnemonic_str)?;
+        self.generate_from_mnemonic_internal(&mnemonic)
+    }
+
+    /// Generate state from a BIP-39 mnemonic (struct)
+    fn generate_from_mnemonic_internal(&self, mnemonic: &Mnemonic) -> Result<KeyState, Error> {
+        let seed = mnemonic.to_seed("");
+        self.generate_from_master_seed(seed)
     }
 
     /// Generate state from a 64-byte master seed
@@ -201,6 +218,7 @@ mod test {
     const KEY2: &str = "c6431e41a67ca926e2c1b7356b9266642d3e039df9f3b428586910305c522635";
     const KEY3: &str = "26d5cf30786a9d2c6f6ef3dffa687257d5ec3baae9e30a3f74d96bbae192f3a7";
     const SEED1: &str = "4a452d8daa6e997ff65bf681262a61b5cadb0ec65989adc594f52cabc96747a19fc6b21bc4db3d9dad553beadc56156b38c377a92d6952dcd2f5d2fe874a2985";
+    const MNEMO1: &str = "oil oil oil oil oil oil oil oil oil oil oil oil";
 
     fn default_keyset_1_and_2(mgr: &KeyManager) -> LevelKeys {
         LevelKeys {
@@ -284,6 +302,23 @@ mod test {
             // this is the wrong value here
             &current.hid_pubkey(),
         ));
+    }
+
+    #[test]
+    fn generate_mnemonic() {
+        let mgr = KeyManager::default();
+        let state1 = mgr.generate_from_mnemonic(MNEMO1).unwrap();
+
+        let pk1 = state1.current_visible_pubkey().unwrap();
+        assert_eq!(
+            hex::encode(pk1.serialize()),
+            "2d051acc76e2102d85ed666bc440f44b6c0a02359c486eb8a714bdd480b89855"
+        );
+
+        // Generate again. result should be same (deterministic)
+        let state2 = mgr.generate_from_mnemonic(MNEMO1).unwrap();
+        let pk2 = state2.current_visible_pubkey().unwrap();
+        assert_eq!(pk1, pk2);
     }
 
     #[test]

@@ -3,8 +3,8 @@
 NIP-41 is a proposal for a scheme whereby a Nostr identity key can be invalidated to a new one safely.
 https://github.com/nostr-protocol/nips/pull/158
 
-__WARNING:__ This is a prototype implementation, use it only with test keys.
- 
+__WARNING:__ This is a prototype implementation, use it only with test keys!
+
 ## Details
 
 Terms:
