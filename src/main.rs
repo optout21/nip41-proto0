@@ -42,10 +42,11 @@ fn usage() {
     );
     println!("{} generate     \t\t Generate a new key state", progname);
     println!(
-        "{} [list]       \t\t List current pubkey of the key state",
+        "{} [show]       \t\t Show current pubkey of the key state",
         progname
     );
-    println!("{} drop      \t\t Invalidate current pubkey", progname);
+    println!("{} inv       \t\t Invalidate current pubkey", progname);
+    println!("{} invdry    \t\t Dry-run invalidate, display as if invalidating current pubkey without comitting to it", progname);
     println!("{} verify    \t\t TODO", progname);
     println!();
 }
@@ -68,16 +69,16 @@ fn print_current(state: &KeyState) {
     );
 }
 
-fn do_list() {
+fn do_show() {
     if let Some(state) = load_state() {
         print_current(&state);
     }
 }
 
-fn do_drop() {
+fn do_inv(commit: bool) {
     if let Some(mut state) = load_state() {
         print_current(&state);
-        let (a, ah, b, _a_vec) = state.invalidate(true).unwrap();
+        let (a, ah, b, _a_vec) = state.invalidate(commit).unwrap();
         println!("Invalidated:     \t {:?}", a);
         println!("     hidden:     \t {:?}", ah);
         println!("        new:     \t {:?}", b);
@@ -89,7 +90,9 @@ fn do_drop() {
         println!("verify?  \t {:?}", verify_result);
 
         // save
-        save_state(&state);
+        if commit {
+            save_state(&state);
+        }
     }
 }
 fn main() {
@@ -98,14 +101,15 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() == 1 {
         usage();
-        do_list();
+        do_show();
     } else {
         // there is an arg
         match args[1].as_str() {
             "import" => println!("TODO import"),
             "generate" => do_generate(),
-            "list" => do_list(),
-            "drop" => do_drop(),
+            "show" => do_show(),
+            "inv" => do_inv(true),
+            "invdry" => do_inv(false),
             "verify" => println!("TODO verify"),
             &_ => usage(),
         }

@@ -37,7 +37,7 @@ cargo build
 
 cargo run generate
 cargo run
-cargo run drop
+cargo run inv
 cargo run
 ```
 
