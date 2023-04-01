@@ -30,15 +30,23 @@ Operations:
 
 - Prerequisite: `rust`
 
-- Simply run:  `cargo run`
+- Try following commands:
+
+```
+cargo build
+
+cargo run generate
+cargo run
+cargo run drop
+cargo run
+```
 
 
 ## TODO
 
 - Create Invalidation message
-- Persist state to file
-- Cmdline options: generate invalidate
-- Use BIP39 menmonic for master seed generation
+- Cmdline options: import, prompt for mnemonic
+- Cmdline options: verify, requires 3 pubkeys
 
 
 ## Contact

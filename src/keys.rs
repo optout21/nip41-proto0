@@ -32,8 +32,10 @@ pub const N_DEFAULT: usize = 256;
 pub struct KeyState {
     /// The N key levels
     k: Vec<LevelKeys>,
-    /// The current level, initially N-1
-    n: usize,
+    /// Number of discarded levels, initially 0
+    l: usize,
+    /// The BIP39 entropy used to generate this set
+    entropy: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -47,21 +49,35 @@ pub enum Error {
     /// Error processing BIP39 mnemonic
     #[error(transparent)]
     Bip39(#[from] bip39::Error),
+    /// File not found
+    #[error("File not found")]
+    FileNotFound,
+    /// File parse error
+    #[error("File parse error")]
+    FileParse,
 }
 
 impl KeyState {
     /// Obtain the current pubkey
     pub fn current_visible_pubkey(&self) -> Result<XOnlyPublicKey, Error> {
-        Ok(self.k[self.n].vis_pubkey())
+        Ok(self.k[self.levels() - 1 - self.l].vis_pubkey())
     }
 
     /// Obtain the current secret key; security sensitive!
     pub fn current_visible_secret_key(&self) -> Result<SecretKey, Error> {
-        Ok(self.k[self.n].vis.secret_key())
+        Ok(self.k[self.levels() - 1 - self.l].vis.secret_key())
     }
 
     pub fn levels(&self) -> usize {
         self.k.len()
+    }
+
+    pub fn current_level(&self) -> usize {
+        self.l
+    }
+
+    pub fn get_entropy(&self) -> Vec<u8> {
+        self.entropy.to_owned()
     }
 
     /// Invalidate the current key; reveal it's secret counterpart,
@@ -83,21 +99,21 @@ impl KeyState {
         ),
         Error,
     > {
-        if self.n == 0 {
+        if self.l >= self.levels() - 1 {
             // No more keys to invalidate to
             return Err(Error::NoMoreKeyLevels);
         }
-        let n_prev = self.n;
-        let n_post = self.n - 1;
+        let l_prev = self.l;
+        let l_post = self.l + 1;
         // Commit, switch to 'previous' key
         if commit {
-            self.n = n_post;
+            self.l = l_post;
         }
         Ok((
-            self.k[n_prev].vis_pubkey(),
-            self.k[n_prev].hid_pubkey(),
-            self.k[n_post].vis_pubkey(),
-            self.k[n_prev..self.levels()]
+            self.k[self.levels() - 1 - l_prev].vis_pubkey(),
+            self.k[self.levels() - 1 - l_prev].hid_pubkey(),
+            self.k[self.levels() - 1 - l_post].vis_pubkey(),
+            self.k[self.levels() - 1 - l_prev..self.levels()]
                 .to_vec()
                 .iter()
                 .map(|kl| kl.vis_pubkey())
@@ -121,26 +137,50 @@ impl KeyManager {
 
     /// Generate a new random state
     pub fn generate_random(&self) -> Result<KeyState, Error> {
+        let entropy = Self::generate_random_entropy();
+        let mnemonic = Mnemonic::from_entropy(&entropy)?;
+        self.generate_from_mnemonic_internal(&mnemonic, 0)
+    }
+
+    pub fn generate_random_entropy() -> Vec<u8> {
         let mut entropy: [u8; 32] = [0; 32];
         thread_rng().fill_bytes(&mut entropy);
-        let mnemonic = Mnemonic::from_entropy(&entropy)?;
-        self.generate_from_mnemonic_internal(&mnemonic)
+        entropy.to_vec()
     }
 
     /// Generate state from a BIP-39 mnemonic (string)
     pub fn generate_from_mnemonic(&self, mnemonic_str: &str) -> Result<KeyState, Error> {
         let mnemonic = Mnemonic::parse(mnemonic_str)?;
-        self.generate_from_mnemonic_internal(&mnemonic)
+        self.generate_from_mnemonic_internal(&mnemonic, 0)
+    }
+
+    /// Generate state from a BIP-39 mnemonic entropy
+    pub fn generate_from_mnemonic_entropy(
+        &self,
+        entropy: Vec<u8>,
+        current_level: usize,
+    ) -> Result<KeyState, Error> {
+        let mnemonic = Mnemonic::from_entropy(&entropy)?;
+        self.generate_from_mnemonic_internal(&mnemonic, current_level)
     }
 
     /// Generate state from a BIP-39 mnemonic (struct)
-    fn generate_from_mnemonic_internal(&self, mnemonic: &Mnemonic) -> Result<KeyState, Error> {
+    fn generate_from_mnemonic_internal(
+        &self,
+        mnemonic: &Mnemonic,
+        current_level: usize,
+    ) -> Result<KeyState, Error> {
         let seed = mnemonic.to_seed("");
-        self.generate_from_master_seed(seed)
+        self.generate_from_master_seed(seed, current_level, mnemonic.to_entropy())
     }
 
     /// Generate state from a 64-byte master seed
-    pub fn generate_from_master_seed(&self, master_seed: [u8; 64]) -> Result<KeyState, Error> {
+    fn generate_from_master_seed(
+        &self,
+        master_seed: [u8; 64],
+        current_level: usize,
+        entropy: Vec<u8>,
+    ) -> Result<KeyState, Error> {
         // generate hidden keys HD (hierarchically deterministically, BIP32)
         let mut sk = Vec::new();
         // for optimization, derive common part only once
@@ -150,11 +190,16 @@ impl KeyManager {
             let child = intermediate_key.derive_child(ChildNumber::new(i as u32, true)?)?;
             sk.push(SecretKey::from_slice(&child.private_key().to_bytes()).unwrap());
         }
-        self.generate_levels_internal(sk)
+        self.generate_levels_internal(sk, current_level, entropy)
     }
 
     /// Generate state, hidden secret keys are supplied. Their number also specifies the levels.
-    fn generate_levels_internal(&self, sk: Vec<SecretKey>) -> Result<KeyState, Error> {
+    fn generate_levels_internal(
+        &self,
+        sk: Vec<SecretKey>,
+        current_level: usize,
+        entropy: Vec<u8>,
+    ) -> Result<KeyState, Error> {
         let mut keys: Vec<LevelKeys> = Vec::new();
 
         let sk_0_hid = sk[0];
@@ -172,8 +217,11 @@ impl KeyManager {
             current = next;
         }
 
-        let n = levels - 1;
-        Ok(KeyState { k: keys, n })
+        Ok(KeyState {
+            k: keys,
+            l: current_level,
+            entropy,
+        })
     }
 
     /// Compute the hash of the concatenation of two public keys (X coordinates)
@@ -359,7 +407,9 @@ mod test {
         let master_seed: [u8; 64] = hex::decode(SEED1).unwrap().try_into().unwrap();
 
         let mgr = KeyManager::default();
-        let state1 = mgr.generate_from_master_seed(master_seed).unwrap();
+        let state1 = mgr
+            .generate_from_master_seed(master_seed, 0, Vec::new())
+            .unwrap();
 
         let pk1 = state1.current_visible_pubkey().unwrap();
         assert_eq!(
@@ -368,7 +418,9 @@ mod test {
         );
 
         // Generate again. result should be same (deterministic)
-        let state2 = mgr.generate_from_master_seed(master_seed).unwrap();
+        let state2 = mgr
+            .generate_from_master_seed(master_seed, 0, Vec::new())
+            .unwrap();
         let pk2 = state2.current_visible_pubkey().unwrap();
         assert_eq!(pk1, pk2);
     }
