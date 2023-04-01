@@ -3,7 +3,10 @@ mod persist;
 
 use crate::keys::{KeyManager, KeyState};
 use crate::persist::Persist;
+use nostr::prelude::ToBech32;
+use secp256k1::{SecretKey, XOnlyPublicKey};
 use std::env;
+use std::string::ToString;
 
 fn load_state() -> Option<KeyState> {
     match Persist::load() {
@@ -26,7 +29,7 @@ fn save_state(state: &KeyState) {
 }
 
 fn boiler() {
-    println!("NIP-41 Proto 0");
+    println!("NIP-41 Proto Zero");
     println!();
     println!("WARNING: This is a prototype implementation, use it only with test keys!");
     println!();
@@ -57,6 +60,22 @@ fn do_generate() {
     save_state(&state);
 }
 
+fn pubkey_string(pk: &XOnlyPublicKey) -> String {
+    format!("{}  ({})", pk.to_bech32().unwrap(), pk.to_string())
+}
+
+fn secret_key_string_short(sk: &SecretKey) -> String {
+    let bech = sk.to_bech32().unwrap();
+    let hex = hex::encode(sk.secret_bytes());
+    format!(
+        "{}..{}  ({}..{})",
+        &bech[0..10],
+        &bech[bech.len() - 6..bech.len()],
+        &hex[0..10],
+        &hex[hex.len() - 6..hex.len()]
+    )
+}
+
 fn print_current(state: &KeyState) {
     println!(
         "Level: {}  (out of {})",
@@ -64,8 +83,12 @@ fn print_current(state: &KeyState) {
         state.levels()
     );
     println!(
-        "Current pubkey:     \t {:?}",
-        state.current_visible_pubkey().unwrap()
+        "Current pubkey:     \t {}",
+        pubkey_string(&state.current_visible_pubkey().unwrap())
+    );
+    println!(
+        "Current secret key: \t {}",
+        secret_key_string_short(&state.current_visible_secret_key().unwrap())
     );
 }
 
@@ -79,9 +102,9 @@ fn do_inv(commit: bool) {
     if let Some(mut state) = load_state() {
         print_current(&state);
         let (a, ah, b, _a_vec) = state.invalidate(commit).unwrap();
-        println!("Invalidated:     \t {:?}", a);
-        println!("     hidden:     \t {:?}", ah);
-        println!("        new:     \t {:?}", b);
+        println!("Invalidated:     \t {:?}", pubkey_string(&a));
+        println!("     hidden:     \t {:?}", pubkey_string(&ah));
+        println!("        new:     \t {:?}", pubkey_string(&b));
         print_current(&state);
 
         // also do verify
