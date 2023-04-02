@@ -40,6 +40,17 @@ cargo run inv
 cargo run
 ```
 
+## TODO
+
+- Publish invalidation msg to relay
+- Option to listen on relay for invalidation events, print & verify them
+
+
+## Contact
+
+Nostr: optout@nostrplebs.com npub1kxgpwh80gp79j0chc925srk6rghw0akggduwau8fwdflslh9jvqqd3lecx
+
+
 ## Sample Output
 
 ```
@@ -56,7 +67,9 @@ Level: 0  (out of 256)
 Current pubkey:     	 npub185daavrw5jesnxsdd6hluva8em59c369jkpas9nfkm28z58e6hpqrqya6z  (3d1bdeb06ea4b3099a0d6eaffe33a7cee85c47459583d81669b6d47150f9d5c2)
 Previous pubkey:    	 None
 Current secret key: 	 nsec1l3gan..yd9ah2  (fc51d9ff63..396749)
-$
+```
+
+```
 $ cargo run inv
 KeyState loaded (256 levels)
 Level: 0  (out of 256)
@@ -78,14 +91,17 @@ Invalidation event:
 State saved
 ```
 
+```
+$ cargo run verify npub195z34nrkuggzmp0dve4ugs85fdkq5q34n3yxaw98zj7afq9cnp2sncwkch npub1vfxu6eandjw8ufpe0wqhhrr4q86z65777vrs66jvx49l2a5fnyvsycs248 npub1en8lkh8c5ljfgjqutpd6q2ht9wy05psguepr7n6958e8yjh0p7wqg3psj9
+    Finished dev [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/nip41-proto0 verify npub195z34nrkuggzmp0dve4ugs85fdkq5q34n3yxaw98zj7afq9cnp2sncwkch npub1vfxu6eandjw8ufpe0wqhhrr4q86z65777vrs66jvx49l2a5fnyvsycs248 npub1en8lkh8c5ljfgjqutpd6q2ht9wy05psguepr7n6958e8yjh0p7wqg3psj9`
+NIP-41 Proto Zero
 
-## TODO
+WARNING: This is a prototype implementation, use it only with test keys!
 
-- Publish invalidation msg to relay
-- Option to listen on relay for invalidation events, print & verify them
-
-
-## Contact
-
-Nostr: optout@nostrplebs.com npub1kxgpwh80gp79j0chc925srk6rghw0akggduwau8fwdflslh9jvqqd3lecx
+Invalid vis     	 npub195z34nrkuggzmp0dve4ugs85fdkq5q34n3yxaw98zj7afq9cnp2sncwkch  (2d051acc76e2102d85ed666bc440f44b6c0a02359c486eb8a714bdd480b89855)
+Invalid hid     	 npub1vfxu6eandjw8ufpe0wqhhrr4q86z65777vrs66jvx49l2a5fnyvsycs248  (624dcd67b36c9c7e24397b817b8c7501f42d53def3070d6a4c354bf576899919)
+New vis         	 npub1en8lkh8c5ljfgjqutpd6q2ht9wy05psguepr7n6958e8yjh0p7wqg3psj9  (cccffb5cf8a7e494481c585ba02aeb2b88fa0608e6423f4f45a1f2724aef0f9c)
+Verification result:  true
+```
 
