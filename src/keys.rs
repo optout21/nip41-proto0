@@ -40,6 +40,9 @@ pub struct KeyState {
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
+    /// There is no invalidated pubkey yet
+    #[error("There is no invalidated pubkey yet")]
+    NoInvalidatedKey,
     /// No more levels left, ran out of pre-defined keys
     #[error("No more levels left, ran out of pre-defined keys")]
     NoMoreKeyLevels,
@@ -55,6 +58,18 @@ pub enum Error {
     /// File parse error
     #[error("File parse error")]
     FileParse,
+}
+
+/// Info describing the invalidation of a pubkey
+pub struct InvalidationInfo {
+    //.. The currently invalidated pubkey (visible)
+    pub invalid: XOnlyPublicKey,
+    /// The hidden counterpart of the invalidated pubkey
+    pub invalid_hid: XOnlyPublicKey,
+    /// The new valid pubkey (visible)
+    pub new: XOnlyPublicKey,
+    /// List of all previous invalidated keys (including the one invalidated just now, plus any earlier ones)
+    pub all_invalid: Vec<XOnlyPublicKey>,
 }
 
 impl KeyState {
@@ -96,38 +111,35 @@ impl KeyState {
     /// - its hidden counterpart
     /// - the new key
     /// - a list of all previous invalidated keys (including the one invalidated just now, plus any earlier ones)
-    pub fn invalidate(
-        &mut self,
-        commit: bool,
-    ) -> Result<
-        (
-            XOnlyPublicKey,
-            XOnlyPublicKey,
-            XOnlyPublicKey,
-            Vec<XOnlyPublicKey>,
-        ),
-        Error,
-    > {
+    pub fn invalidate(&mut self) -> Result<InvalidationInfo, Error> {
         if self.l >= self.levels() - 1 {
             // No more keys to invalidate to
             return Err(Error::NoMoreKeyLevels);
         }
-        let l_prev = self.l;
-        let l_post = self.l + 1;
-        // Commit, switch to 'previous' key
-        if commit {
-            self.l = l_post;
+        // Switch to 'previous' key
+        self.l = self.l + 1;
+        self.invalidate_prev()
+    }
+
+    /// Return the info from the invalidation of the previous pubkey (when the current pubkey was switched to).
+    /// If there was no invalidation, error is returned
+    pub fn invalidate_prev(&self) -> Result<InvalidationInfo, Error> {
+        if self.l == 0 {
+            Err(Error::NoInvalidatedKey)
+        } else {
+            let index_cur = self.levels() - 1 - self.l;
+            let index_prev = self.levels() - self.l;
+            Ok(InvalidationInfo {
+                invalid: self.k[index_prev].vis_pubkey(),
+                invalid_hid: self.k[index_prev].hid_pubkey(),
+                new: self.k[index_cur].vis_pubkey(),
+                all_invalid: self.k[index_prev..self.levels()]
+                    .to_vec()
+                    .iter()
+                    .map(|kl| kl.vis_pubkey())
+                    .collect(),
+            })
         }
-        Ok((
-            self.k[self.levels() - 1 - l_prev].vis_pubkey(),
-            self.k[self.levels() - 1 - l_prev].hid_pubkey(),
-            self.k[self.levels() - 1 - l_post].vis_pubkey(),
-            self.k[self.levels() - 1 - l_prev..self.levels()]
-                .to_vec()
-                .iter()
-                .map(|kl| kl.vis_pubkey())
-                .collect(),
-        ))
     }
 }
 
@@ -329,26 +341,29 @@ mod test {
     fn invalidate_and_verify() {
         let mgr = KeyManager::default();
         let mut state = mgr.generate_random().unwrap();
-        let pk = state.current_pubkey();
-        // do an invalidate, don't commit
-        let (invalid, invalid_hid, new_pk, invalid_vec) = state.invalidate(false).unwrap();
-        assert_eq!(invalid, pk);
-        assert_eq!(invalid_vec.len(), 1);
-        assert_eq!(invalid_vec[0], pk);
+        let pre_curr = state.current_pubkey();
+
+        // no invalidated yet
+        assert_eq!(
+            state.invalidate_prev().err().unwrap(),
+            Error::NoInvalidatedKey
+        );
+
+        // do invalidate current key
+        let inv_info = state.invalidate().unwrap();
+        assert_eq!(inv_info.invalid, pre_curr);
+        assert_eq!(inv_info.all_invalid.len(), 1);
+        assert_eq!(inv_info.all_invalid[0], pre_curr);
+        // current has changed
+        assert_eq!(state.current_pubkey(), inv_info.new);
 
         // verify
-        let verify_result = mgr.verify(&invalid, &invalid_hid, &new_pk);
+        let verify_result = mgr.verify(&inv_info.invalid, &inv_info.invalid_hid, &inv_info.new);
         assert!(verify_result);
 
-        // invalidation was not committed, current does not change
-        assert_eq!(state.current_pubkey(), pk);
-
-        // invoke it again, this time committing
-        let _ = state.invalidate(true);
-        // current is different
-        assert_eq!(state.current_pubkey(), new_pk);
-        // previous
-        assert_eq!(state.previous_pubkey().unwrap(), pk);
+        // Same invalidation info can be retrieved
+        let inv_info2 = state.invalidate_prev().unwrap();
+        assert_eq!(inv_info2.new, inv_info.new);
     }
 
     #[test]
@@ -359,18 +374,15 @@ mod test {
         // do 255 invalidates
         for i in 0..255 {
             let pk = state.current_pubkey();
-            let (invalid, invalid_hid, new, invalid_vec) = state.invalidate(true).unwrap();
-            assert_eq!(invalid, pk);
-            assert_eq!(invalid_vec.len(), i + 1);
+            let inv_info = state.invalidate().unwrap();
+            assert_eq!(inv_info.invalid, pk);
+            assert_eq!(inv_info.all_invalid.len(), i + 1);
             // verify
-            let verify_result = mgr.verify(&invalid, &invalid_hid, &new);
+            let verify_result = mgr.verify(&inv_info.invalid, &inv_info.invalid_hid, &inv_info.new);
             assert!(verify_result);
         }
         // try another one, should fail
-        assert_eq!(
-            state.invalidate(true).err().unwrap(),
-            Error::NoMoreKeyLevels
-        );
+        assert_eq!(state.invalidate().err().unwrap(), Error::NoMoreKeyLevels);
     }
 
     #[test]

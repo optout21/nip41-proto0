@@ -49,7 +49,10 @@ fn usage() {
         progname
     );
     println!("{} inv       \t\t Invalidate current pubkey", progname);
-    println!("{} invdry    \t\t Dry-run invalidate, display as if invalidating current pubkey without comitting to it", progname);
+    println!(
+        "{} invprev   \t\t Display invalidation info from last invalidation, no change in state",
+        progname
+    );
     println!("{} verify    \t\t TODO", progname);
     println!();
 }
@@ -109,16 +112,32 @@ fn do_inv(commit: bool) {
     if let Some(mut state) = load_state() {
         print_current(&state);
 
-        let (a, ah, b, _a_vec) = state.invalidate(commit).unwrap();
-        println!("Invalidated:       \t {}", pubkey_string(&a));
-        println!("     hidden:       \t {}", pubkey_string(&ah));
-        println!("        new:       \t {}", pubkey_string(&b));
-        print_current(&state);
+        let inv_info = if commit {
+            state.invalidate().unwrap()
+        } else {
+            match state.invalidate_prev() {
+                Err(e) => {
+                    println!("No invalidated key  ({e})");
+                    return;
+                }
+                Ok(ii) => ii,
+            }
+        };
+        println!("Invalidation info:");
+        println!("Invalidated:       \t {}", pubkey_string(&inv_info.invalid));
+        println!(
+            "     hidden:       \t {}",
+            pubkey_string(&inv_info.invalid_hid)
+        );
+        println!("        new:       \t {}", pubkey_string(&inv_info.new));
+        if commit {
+            print_current(&state);
+        }
 
         // also do verify
         let mgr = KeyManager::default();
-        let verify_result = mgr.verify(&a, &ah, &b);
-        println!("verify?  \t {:?}", verify_result);
+        let verify_result = mgr.verify(&inv_info.invalid, &inv_info.invalid_hid, &inv_info.new);
+        println!("verify?         \t {:?}", verify_result);
 
         // save
         if commit {
@@ -126,6 +145,7 @@ fn do_inv(commit: bool) {
         }
     }
 }
+
 fn main() {
     boiler();
 
@@ -140,7 +160,7 @@ fn main() {
             "generate" => do_generate(),
             "show" => do_show(),
             "inv" => do_inv(true),
-            "invdry" => do_inv(false),
+            "invprev" => do_inv(false),
             "verify" => println!("TODO verify"),
             &_ => usage(),
         }
