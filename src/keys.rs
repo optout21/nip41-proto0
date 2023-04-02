@@ -1,4 +1,4 @@
-/// Key management code
+/// Key management logic
 ///
 use bip32::{ChildNumber, XPrv};
 use bip39::Mnemonic;
@@ -58,14 +58,23 @@ pub enum Error {
 }
 
 impl KeyState {
-    /// Obtain the current pubkey
-    pub fn current_visible_pubkey(&self) -> Result<XOnlyPublicKey, Error> {
-        Ok(self.k[self.levels() - 1 - self.l].vis_pubkey())
+    /// Obtain the current visible pubkey
+    pub fn current_pubkey(&self) -> XOnlyPublicKey {
+        self.k[self.levels() - 1 - self.l].vis_pubkey()
+    }
+
+    /// Obtain the previously used invalid pubkey, if there is one.
+    pub fn previous_pubkey(&self) -> Option<XOnlyPublicKey> {
+        if self.l == 0 {
+            None
+        } else {
+            Some(self.k[self.levels() - self.l].vis_pubkey())
+        }
     }
 
     /// Obtain the current secret key; security sensitive!
-    pub fn current_visible_secret_key(&self) -> Result<SecretKey, Error> {
-        Ok(self.k[self.levels() - 1 - self.l].vis.secret_key())
+    pub fn current_secret_key(&self) -> SecretKey {
+        self.k[self.levels() - 1 - self.l].vis.secret_key()
     }
 
     pub fn levels(&self) -> usize {
@@ -307,8 +316,8 @@ mod test {
 
         assert_eq!(state.levels(), 256);
 
-        let sk = state.current_visible_secret_key().unwrap();
-        let pk = state.current_visible_pubkey().unwrap();
+        let sk = state.current_secret_key();
+        let pk = state.current_pubkey();
         // check sk-pk
         assert_eq!(
             sk.x_only_public_key(&mgr.secp).0.serialize(),
@@ -320,23 +329,26 @@ mod test {
     fn invalidate_and_verify() {
         let mgr = KeyManager::default();
         let mut state = mgr.generate_random().unwrap();
-        let pk = state.current_visible_pubkey().unwrap();
+        let pk = state.current_pubkey();
         // do an invalidate, don't commit
-        let (invalid, invalid_hid, new, invalid_vec) = state.invalidate(false).unwrap();
+        let (invalid, invalid_hid, new_pk, invalid_vec) = state.invalidate(false).unwrap();
         assert_eq!(invalid, pk);
         assert_eq!(invalid_vec.len(), 1);
         assert_eq!(invalid_vec[0], pk);
 
         // verify
-        let verify_result = mgr.verify(&invalid, &invalid_hid, &new);
+        let verify_result = mgr.verify(&invalid, &invalid_hid, &new_pk);
         assert!(verify_result);
 
         // invalidation was not committed, current does not change
-        assert_eq!(state.current_visible_pubkey().unwrap(), pk);
+        assert_eq!(state.current_pubkey(), pk);
 
         // invoke it again, this time committing
         let _ = state.invalidate(true);
-        assert_eq!(state.current_visible_pubkey().unwrap(), new);
+        // current is different
+        assert_eq!(state.current_pubkey(), new_pk);
+        // previous
+        assert_eq!(state.previous_pubkey().unwrap(), pk);
     }
 
     #[test]
@@ -346,7 +358,7 @@ mod test {
         assert_eq!(state.levels(), 256);
         // do 255 invalidates
         for i in 0..255 {
-            let pk = state.current_visible_pubkey().unwrap();
+            let pk = state.current_pubkey();
             let (invalid, invalid_hid, new, invalid_vec) = state.invalidate(true).unwrap();
             assert_eq!(invalid, pk);
             assert_eq!(invalid_vec.len(), i + 1);
@@ -390,7 +402,7 @@ mod test {
         let mgr = KeyManager::default();
         let state1 = mgr.generate_from_mnemonic(MNEMO1).unwrap();
 
-        let pk1 = state1.current_visible_pubkey().unwrap();
+        let pk1 = state1.current_pubkey();
         assert_eq!(
             hex::encode(pk1.serialize()),
             "2d051acc76e2102d85ed666bc440f44b6c0a02359c486eb8a714bdd480b89855"
@@ -398,7 +410,7 @@ mod test {
 
         // Generate again. result should be same (deterministic)
         let state2 = mgr.generate_from_mnemonic(MNEMO1).unwrap();
-        let pk2 = state2.current_visible_pubkey().unwrap();
+        let pk2 = state2.current_pubkey();
         assert_eq!(pk1, pk2);
     }
 
@@ -411,7 +423,7 @@ mod test {
             .generate_from_master_seed(master_seed, 0, Vec::new())
             .unwrap();
 
-        let pk1 = state1.current_visible_pubkey().unwrap();
+        let pk1 = state1.current_pubkey();
         assert_eq!(
             hex::encode(pk1.serialize()),
             "ed38c53f8e4eadaebc796b40e97ffb8808f78798d5219b9dfe5e341e89e411ee"
@@ -421,7 +433,7 @@ mod test {
         let state2 = mgr
             .generate_from_master_seed(master_seed, 0, Vec::new())
             .unwrap();
-        let pk2 = state2.current_visible_pubkey().unwrap();
+        let pk2 = state2.current_pubkey();
         assert_eq!(pk1, pk2);
     }
 

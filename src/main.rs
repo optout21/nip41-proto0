@@ -84,11 +84,18 @@ fn print_current(state: &KeyState) {
     );
     println!(
         "Current pubkey:     \t {}",
-        pubkey_string(&state.current_visible_pubkey().unwrap())
+        pubkey_string(&state.current_pubkey())
+    );
+    println!(
+        "Previous pubkey:    \t {}",
+        match &state.previous_pubkey() {
+            None => "None".to_string(),
+            Some(k) => pubkey_string(k),
+        }
     );
     println!(
         "Current secret key: \t {}",
-        secret_key_string_short(&state.current_visible_secret_key().unwrap())
+        secret_key_string_short(&state.current_secret_key())
     );
 }
 
@@ -101,10 +108,11 @@ fn do_show() {
 fn do_inv(commit: bool) {
     if let Some(mut state) = load_state() {
         print_current(&state);
+
         let (a, ah, b, _a_vec) = state.invalidate(commit).unwrap();
-        println!("Invalidated:     \t {:?}", pubkey_string(&a));
-        println!("     hidden:     \t {:?}", pubkey_string(&ah));
-        println!("        new:     \t {:?}", pubkey_string(&b));
+        println!("Invalidated:       \t {}", pubkey_string(&a));
+        println!("     hidden:       \t {}", pubkey_string(&ah));
+        println!("        new:       \t {}", pubkey_string(&b));
         print_current(&state);
 
         // also do verify
