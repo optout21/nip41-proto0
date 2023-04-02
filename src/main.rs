@@ -1,9 +1,11 @@
 mod keys;
+mod nostr;
 mod persist;
 
 use crate::keys::{KeyManager, KeyState};
+use crate::nostr::Nip41;
 use crate::persist::Persist;
-use nostr::prelude::ToBech32;
+use ::nostr::prelude::ToBech32;
 use secp256k1::{SecretKey, XOnlyPublicKey};
 use std::env;
 use std::string::ToString;
@@ -138,6 +140,10 @@ fn do_inv(commit: bool) {
         let mgr = KeyManager::default();
         let verify_result = mgr.verify(&inv_info.invalid, &inv_info.invalid_hid, &inv_info.new);
         println!("verify?         \t {:?}", verify_result);
+
+        // obtain event
+        let event = Nip41::build_invalidate_event_from_state(&mut state).unwrap();
+        println!("Invalidation event: \n{}\n", event.as_json());
 
         // save
         if commit {

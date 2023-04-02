@@ -52,6 +52,9 @@ pub enum Error {
     /// Error processing BIP39 mnemonic
     #[error(transparent)]
     Bip39(#[from] bip39::Error),
+    /// Invalid key
+    #[error("Invalid key")]
+    InvalidKey,
     /// File not found
     #[error("File not found")]
     FileNotFound,
