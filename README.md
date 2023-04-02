@@ -81,7 +81,6 @@ State saved
 
 ## TODO
 
-- Cmdline options: verify, requires 3 pubkeys
 - Publish invalidation msg to relay
 - Option to listen on relay for invalidation events, print & verify them
 

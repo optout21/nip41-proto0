@@ -52,6 +52,9 @@ pub enum Error {
     /// Error processing BIP39 mnemonic
     #[error(transparent)]
     Bip39(#[from] bip39::Error),
+    /// Nostr key error
+    #[error(transparent)]
+    NostrKey(#[from] nostr::key::Error),
     /// Invalid key
     #[error("Invalid key")]
     InvalidKey,
@@ -274,28 +277,28 @@ impl KeyManager {
     /// Perform verification of a newly rotated key
     pub fn verify(
         &self,
-        next_visible: &XOnlyPublicKey,
-        next_hidden: &XOnlyPublicKey,
-        prev_visible: &XOnlyPublicKey,
+        invalid_vis: &XOnlyPublicKey,
+        invalid_hid: &XOnlyPublicKey,
+        new_vis: &XOnlyPublicKey,
     ) -> bool {
-        let hash = Self::hash_of_two_pubkeys(&prev_visible, &next_hidden);
+        let hash = Self::hash_of_two_pubkeys(&new_vis, &invalid_hid);
         // Compute new pubkey by adding hash value (point addition) (pk1 = pk1' + hash)
         // We try two options, with the two parity options
         let diff = Scalar::from_be_bytes(hash).unwrap();
-        let pk_next_odd = next_hidden
+        let pk_next_odd = invalid_hid
             .public_key(Parity::Odd)
             .add_exp_tweak(&self.secp, &diff)
             .unwrap()
             .x_only_public_key()
             .0;
-        let pk_next_even = next_hidden
+        let pk_next_even = invalid_hid
             .public_key(Parity::Even)
             .add_exp_tweak(&self.secp, &diff)
             .unwrap()
             .x_only_public_key()
             .0;
         // Compare
-        (pk_next_odd == *next_visible) || (pk_next_even == *next_visible)
+        (pk_next_odd == *invalid_vis) || (pk_next_even == *invalid_vis)
     }
 }
 

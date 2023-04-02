@@ -2,10 +2,10 @@ mod keys;
 mod nostr;
 mod persist;
 
-use crate::keys::{KeyManager, KeyState};
+use crate::keys::{Error, KeyManager, KeyState};
 use crate::nostr::Nip41;
 use crate::persist::Persist;
-use ::nostr::prelude::ToBech32;
+use ::nostr::prelude::{FromPkStr, Keys, ToBech32};
 use secp256k1::{SecretKey, XOnlyPublicKey};
 use std::env;
 use std::io::{BufRead, Write};
@@ -43,20 +43,20 @@ fn usage() {
     println!("Usage:");
     println!();
     println!(
-        "{} import       \t\t Import a BIP39 menmonic and create new state from it",
+        "{} import       \t Import a BIP39 menmonic and create new state from it",
         progname
     );
-    println!("{} generate     \t\t Generate a new key state", progname);
+    println!("{} generate     \t Generate a new key state", progname);
     println!(
-        "{} [show]       \t\t Show current pubkey of the key state",
+        "{} [show]       \t Show current pubkey of the key state",
         progname
     );
-    println!("{} inv       \t\t Invalidate current pubkey", progname);
+    println!("{} inv       \t Invalidate current pubkey", progname);
     println!(
-        "{} invprev   \t\t Display invalidation info from last invalidation, no change in state",
+        "{} invprev   \t Display invalidation info from last invalidation, no change in state",
         progname
     );
-    println!("{} verify    \t\t TODO", progname);
+    println!("{} verify <invalid> <invalid_hid> <new> \t Verify key invalidation; 3 pubkeys must be supplied (npub or hex)", progname);
     println!();
 }
 
@@ -181,6 +181,27 @@ fn do_inv(commit: bool) {
     }
 }
 
+fn do_verify_int(
+    invalid_str: &str,
+    invalid_hid_str: &str,
+    new_pk_str: &str,
+) -> Result<bool, Error> {
+    let invalid = Keys::from_pk_str(invalid_str)?.public_key();
+    let invalid_hid = Keys::from_pk_str(invalid_hid_str)?.public_key();
+    let new_pk = Keys::from_pk_str(new_pk_str)?.public_key();
+    println!("Invalid vis     \t {}", pubkey_string(&invalid));
+    println!("Invalid hid     \t {}", pubkey_string(&invalid_hid));
+    println!("New vis         \t {}", pubkey_string(&new_pk));
+    Ok(KeyManager::default().verify(&invalid, &invalid_hid, &new_pk))
+}
+
+fn do_verify(invalid: &str, invalid_hid: &str, new_pk: &str) {
+    match do_verify_int(invalid, invalid_hid, new_pk) {
+        Err(e) => println!("Error: {e}"),
+        Ok(res) => println!("Verification result:  {res}"),
+    }
+}
+
 fn main() {
     boiler();
 
@@ -196,7 +217,14 @@ fn main() {
             "show" => do_show(),
             "inv" => do_inv(true),
             "invprev" => do_inv(false),
-            "verify" => println!("TODO verify"),
+            "verify" => {
+                if args.len() < 5 {
+                    println!("Error: missing arguments, 3 needed");
+                    usage()
+                } else {
+                    do_verify(&args[2], &args[3], &args[4]);
+                }
+            }
             &_ => usage(),
         }
     }
