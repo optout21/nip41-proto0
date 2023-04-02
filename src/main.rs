@@ -8,6 +8,7 @@ use crate::persist::Persist;
 use ::nostr::prelude::ToBech32;
 use secp256k1::{SecretKey, XOnlyPublicKey};
 use std::env;
+use std::io::{BufRead, Write};
 use std::string::ToString;
 
 fn load_state() -> Option<KeyState> {
@@ -63,6 +64,34 @@ fn do_generate() {
     let mgr = KeyManager::default();
     let state = mgr.generate_random().unwrap();
     save_state(&state);
+    print_current(&state);
+}
+
+fn do_import() {
+    loop {
+        // ask for mnemonic interactively
+        print!("Enter mnemonic (12-24 words): ");
+        std::io::stdout().flush().unwrap(); // Without flushing, the `>` doesn't print
+        let stdin = std::io::stdin();
+        let mut line_reader = stdin.lock().lines();
+        match line_reader.next() {
+            None => {}
+            Some(l) => match l {
+                Err(_) => {}
+                Ok(l) => {
+                    let mgr = KeyManager::default();
+                    match mgr.generate_from_mnemonic(&l) {
+                        Err(e) => println!("Error: Could not generate from mnemonic; {e}"),
+                        Ok(state) => {
+                            save_state(&state);
+                            print_current(&state);
+                            break;
+                        }
+                    }
+                }
+            },
+        };
+    }
 }
 
 fn pubkey_string(pk: &XOnlyPublicKey) -> String {
@@ -162,7 +191,7 @@ fn main() {
     } else {
         // there is an arg
         match args[1].as_str() {
-            "import" => println!("TODO import"),
+            "import" => do_import(),
             "generate" => do_generate(),
             "show" => do_show(),
             "inv" => do_inv(true),
