@@ -1,0 +1,31 @@
+name: Linux CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
+    - name: Set default toolchain
+      run: |
+        rustup default 1.67.0
+    - name: Build
+      run: cargo build
+    - name: Run tests
+      run: cargo test
+    - name: Run tests
+      run: run_sample.sh
