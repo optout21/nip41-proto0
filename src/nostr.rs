@@ -4,6 +4,7 @@ use crate::keys::{Error, KeyState};
 #[cfg(test)]
 use nostr::prelude::UnsignedEvent;
 use nostr::prelude::{Event, EventBuilder, Keys, Kind, Tag, TagKind, XOnlyPublicKey};
+use nostr_sdk::prelude::{Client, Options};
 
 pub struct Nip41 {}
 
@@ -41,8 +42,26 @@ impl Nip41 {
         let inv_info = state.invalidate_prev()?;
         let sk = state.current_secret_key();
         let eb = Self::invalidate_event_builder(inv_info.invalid, inv_info.invalid_hid)?;
-        let event = eb.to_event(&Keys::new(sk)).map_err(|_| Error::InvalidKey)?;
+        let event = eb.to_event(&Keys::new(sk))?;
         Ok(event)
+    }
+
+    async fn send_event(relay_client: &Client, event: Event) -> Result<(), Error> {
+        let kind = event.kind;
+        let id = relay_client.send_event(event).await?;
+        println!("Event sent, kind {} id {}", kind.as_u32(), id);
+        Ok(())
+    }
+
+    pub async fn send_event_to_relay(relay: &str, event: Event) -> Result<(), Error> {
+        let app_keys = Keys::generate();
+        let opts = Options::new().wait_for_send(true);
+        let relay_client = Client::new_with_opts(&app_keys, opts);
+        relay_client.add_relay(relay.to_string(), None).await?;
+        relay_client.connect().await;
+        println!("Connected to relay {relay}");
+        Self::send_event(&relay_client, event).await?;
+        Ok(())
     }
 }
 

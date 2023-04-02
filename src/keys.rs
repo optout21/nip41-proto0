@@ -38,7 +38,7 @@ pub struct KeyState {
     entropy: Vec<u8>,
 }
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// There is no invalidated pubkey yet
     #[error("There is no invalidated pubkey yet")]
@@ -55,15 +55,18 @@ pub enum Error {
     /// Nostr key error
     #[error(transparent)]
     NostrKey(#[from] nostr::key::Error),
-    /// Invalid key
-    #[error("Invalid key")]
-    InvalidKey,
-    /// File not found
-    #[error("File not found")]
-    FileNotFound,
+    /// Nostr event builder error (key?)
+    #[error(transparent)]
+    EventBuilder(#[from] nostr::event::builder::Error),
+    /// File error (not found)
+    #[error(transparent)]
+    FileNotFound(#[from] std::io::Error),
     /// File parse error
     #[error("File parse error")]
     FileParse,
+    /// Nostr client error
+    #[error(transparent)]
+    NostrClient(#[from] nostr_sdk::client::Error),
 }
 
 /// Info describing the invalidation of a pubkey
@@ -350,10 +353,10 @@ mod test {
         let pre_curr = state.current_pubkey();
 
         // no invalidated yet
-        assert_eq!(
-            state.invalidate_prev().err().unwrap(),
-            Error::NoInvalidatedKey
-        );
+        match state.invalidate_prev() {
+            Err(Error::NoInvalidatedKey) => {}
+            _ => panic!("Did not get expected error"),
+        }
 
         // do invalidate current key
         let inv_info = state.invalidate().unwrap();
@@ -388,7 +391,10 @@ mod test {
             assert!(verify_result);
         }
         // try another one, should fail
-        assert_eq!(state.invalidate().err().unwrap(), Error::NoMoreKeyLevels);
+        match state.invalidate() {
+            Err(Error::NoMoreKeyLevels) => {}
+            _ => panic!("Did not get expected error"),
+        }
     }
 
     #[test]

@@ -12,12 +12,12 @@ impl Persist {
     pub fn save(state: &KeyState) -> Result<(), Error> {
         let hexstr = hex::encode(state.get_entropy());
         let contents = format!("{} {}", hexstr, state.current_level());
-        fs::write(FILE_NAME, contents).map_err(|_| Error::FileNotFound)?;
+        fs::write(FILE_NAME, contents)?;
         Ok(())
     }
 
     pub fn load() -> Result<KeyState, Error> {
-        let contents = fs::read_to_string(FILE_NAME).map_err(|_| Error::FileNotFound)?;
+        let contents = fs::read_to_string(FILE_NAME)?;
         let split = contents.split(' ').collect::<Vec<&str>>();
         if split.len() < 2 {
             return Err(Error::FileParse);

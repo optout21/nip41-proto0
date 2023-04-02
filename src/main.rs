@@ -56,7 +56,11 @@ fn usage() {
         "{} invprev   \t Display invalidation info from last invalidation, no change in state",
         progname
     );
-    println!("{} verify <invalid> <invalid_hid> <new> \t Verify key invalidation; 3 pubkeys must be supplied (npub or hex)", progname);
+    println!("{} verify <invalid> <invalid_hid> <new>  \t Verify key invalidation; 3 pubkeys must be supplied (npub or hex)", progname);
+    println!(
+        "{} invsend <relay>  \t Send invalidation event to relay, first do invalidation (with 'inv')",
+        progname
+    );
     println!();
 }
 
@@ -136,6 +140,8 @@ fn print_current(state: &KeyState) {
 fn do_show() {
     if let Some(state) = load_state() {
         print_current(&state);
+    } else {
+        println!("Error: Could not load saved state");
     }
 }
 
@@ -178,6 +184,8 @@ fn do_inv(commit: bool) {
         if commit {
             save_state(&state);
         }
+    } else {
+        println!("Error: Could not load saved state");
     }
 }
 
@@ -202,7 +210,27 @@ fn do_verify(invalid: &str, invalid_hid: &str, new_pk: &str) {
     }
 }
 
-fn main() {
+async fn do_invsend_int(state: &KeyState, relay: &str) -> Result<(), Error> {
+    let event = Nip41::build_invalidate_event_from_state(&state)?;
+    println!("Invalidation event: {}", event.as_json());
+    Nip41::send_event_to_relay(relay, event).await?;
+    Ok(())
+}
+
+async fn do_invsend(relay: &str) {
+    if let Some(state) = load_state() {
+        println!("Relay: {relay}");
+        match do_invsend_int(&state, relay).await {
+            Err(e) => println!("Error: Could not send event; {e}"),
+            Ok(_) => {}
+        }
+    } else {
+        println!("Error: Could not load saved state");
+    }
+}
+
+#[tokio::main]
+async fn main() {
     boiler();
 
     let args: Vec<String> = env::args().collect();
@@ -218,11 +246,19 @@ fn main() {
             "inv" => do_inv(true),
             "invprev" => do_inv(false),
             "verify" => {
-                if args.len() < 5 {
+                if args.len() < 2 + 3 {
                     println!("Error: missing arguments, 3 needed");
                     usage()
                 } else {
                     do_verify(&args[2], &args[3], &args[4]);
+                }
+            }
+            "invsend" => {
+                if args.len() < 2 + 1 {
+                    println!("Error: missing relay argument");
+                    usage()
+                } else {
+                    do_invsend(&args[2]).await;
                 }
             }
             &_ => usage(),
