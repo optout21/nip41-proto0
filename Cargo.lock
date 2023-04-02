@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "nip41-proto0"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bip32",
  "bip39",

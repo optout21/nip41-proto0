@@ -1,12 +1,34 @@
 /// Nostr-specific logic
 ///
-use crate::keys::{Error, KeyState};
+use crate::keys::{Error, KeyManager, KeyState};
 #[cfg(test)]
 use nostr::prelude::UnsignedEvent;
-use nostr::prelude::{Event, EventBuilder, Keys, Kind, Tag, TagKind, XOnlyPublicKey};
-use nostr_sdk::prelude::{Client, Options};
+use nostr::prelude::{
+    Event, EventBuilder, Keys, Kind, SecretKey, Tag, TagKind, ToBech32, XOnlyPublicKey,
+};
+use nostr_sdk::prelude::{Client, Filter, Options, RelayPoolNotification, Timestamp};
+use std::str::FromStr;
+use std::time::Duration;
+
+const KIND_NIP41: u64 = 13;
 
 pub struct Nip41 {}
+
+pub fn pubkey_string(pk: &XOnlyPublicKey) -> String {
+    format!("{}  ({})", pk.to_bech32().unwrap(), pk.to_string())
+}
+
+pub fn secret_key_string_short(sk: &SecretKey) -> String {
+    let bech = sk.to_bech32().unwrap();
+    let hex = hex::encode(sk.secret_bytes());
+    format!(
+        "{}..{}  ({}..{})",
+        &bech[0..10],
+        &bech[bech.len() - 6..bech.len()],
+        &hex[0..10],
+        &hex[hex.len() - 6..hex.len()]
+    )
+}
 
 impl Nip41 {
     pub fn invalidate_event_builder(
@@ -14,7 +36,7 @@ impl Nip41 {
         invalid_hid: XOnlyPublicKey,
     ) -> Result<EventBuilder, Error> {
         Ok(EventBuilder::new(
-            Kind::Custom(13),
+            Kind::Custom(KIND_NIP41),
             "key invalidation".to_string(),
             &[
                 Tag::PubKey(invalid, None),
@@ -37,6 +59,65 @@ impl Nip41 {
         Ok(event)
     }
 
+    /// Verify an invalidation event{
+    pub fn verify(event: &Event) -> Result<bool, String> {
+        if event.kind != Kind::Custom(KIND_NIP41) {
+            return Err("Wrong event kind".to_string());
+        }
+        let mut tag_p = None;
+        let mut tag_hidden_key = None;
+        for tag in &event.tags {
+            match tag {
+                Tag::PubKey(pk, _) => {
+                    tag_p = Some(pk);
+                }
+                Tag::Generic(tagkind, vals) => {
+                    if let TagKind::Custom(s) = tagkind {
+                        if s == "hidden-key" && vals.len() > 0 {
+                            match XOnlyPublicKey::from_str(&vals[0]) {
+                                Err(e) => println!("Key parse error {e}"),
+                                Ok(pk) => tag_hidden_key = Some(pk),
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if tag_p.is_none() {
+            return Err("Missing p tag".to_string());
+        }
+        if tag_hidden_key.is_none() {
+            return Err("Missing hidden-key tag".to_string());
+        }
+        let invalid = tag_p.unwrap();
+        let invalid_hid = tag_hidden_key.unwrap();
+        let new_pk = event.pubkey;
+        println!(
+            "'P-tag' (invalidated):               {}",
+            pubkey_string(&invalid)
+        );
+        println!(
+            "'Hidden-key-tag' (invalidated hid):  {}",
+            pubkey_string(&invalid_hid)
+        );
+        println!(
+            "Pubkey (new):                        {}",
+            pubkey_string(&new_pk)
+        );
+
+        if !KeyManager::default().verify(&invalid, &invalid_hid, &new_pk) {
+            Ok(false)
+        } else {
+            println!(
+                "\nInvalidate  {}  in favor of  {} !\n",
+                invalid.to_bech32().unwrap(),
+                new_pk.to_bech32().unwrap()
+            );
+            Ok(true)
+        }
+    }
+
     // Build signed invalidation event, directly from state, for previous invalidation (so this should be called after comitting the invalidation).
     pub fn build_invalidate_event_from_state(state: &KeyState) -> Result<Event, Error> {
         let inv_info = state.invalidate_prev()?;
@@ -53,15 +134,46 @@ impl Nip41 {
         Ok(())
     }
 
-    pub async fn send_event_to_relay(relay: &str, event: Event) -> Result<(), Error> {
+    async fn connect(relay: &str) -> Result<Client, Error> {
         let app_keys = Keys::generate();
         let opts = Options::new().wait_for_send(true);
         let relay_client = Client::new_with_opts(&app_keys, opts);
         relay_client.add_relay(relay.to_string(), None).await?;
         relay_client.connect().await;
         println!("Connected to relay {relay}");
+        Ok(relay_client)
+    }
+
+    pub async fn send_event_to_relay(relay: &str, event: Event) -> Result<(), Error> {
+        let relay_client = Self::connect(relay).await?;
         Self::send_event(&relay_client, event).await?;
         Ok(())
+    }
+
+    pub async fn listen(relay: &str) -> Result<(), Error> {
+        let relay_client = Self::connect(relay).await?;
+        relay_client
+            .subscribe(vec![Filter::new()
+                .kind(Kind::Custom(KIND_NIP41))
+                .since(Timestamp::now() - Duration::from_secs(60))])
+            .await;
+        println!("Subscribed to relay for invalidation events ...");
+
+        loop {
+            // endless
+            let mut notifications = relay_client.notifications();
+            while let Ok(notification) = notifications.recv().await {
+                if let RelayPoolNotification::Event(_url, event) = notification {
+                    if event.kind == Kind::Custom(KIND_NIP41) {
+                        println!("Received event:  {}", event.as_json());
+                        match Self::verify(&event) {
+                            Err(e) => println!("Error: verification failed: {e}"),
+                            Ok(res) => println!("Verification result: {res} \n"),
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

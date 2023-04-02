@@ -3,10 +3,9 @@ mod nostr;
 mod persist;
 
 use crate::keys::{Error, KeyManager, KeyState};
-use crate::nostr::Nip41;
+use crate::nostr::{pubkey_string, secret_key_string_short, Nip41};
 use crate::persist::Persist;
-use ::nostr::prelude::{FromPkStr, Keys, ToBech32};
-use secp256k1::{SecretKey, XOnlyPublicKey};
+use ::nostr::prelude::{FromPkStr, Keys};
 use std::env;
 use std::io::{BufRead, Write};
 use std::string::ToString;
@@ -43,22 +42,26 @@ fn usage() {
     println!("Usage:");
     println!();
     println!(
-        "{} import       \t Import a BIP39 menmonic and create new state from it",
+        "{} import          \t Import a BIP39 menmonic and create new state from it",
         progname
     );
-    println!("{} generate     \t Generate a new key state", progname);
+    println!("{} generate        \t Generate a new key state", progname);
     println!(
-        "{} [show]       \t Show current pubkey of the key state",
+        "{} [show]          \t Show current pubkey of the key state",
         progname
     );
-    println!("{} inv       \t Invalidate current pubkey", progname);
+    println!("{} inv             \t Invalidate current pubkey", progname);
     println!(
-        "{} invprev   \t Display invalidation info from last invalidation, no change in state",
+             "{} invprev         \t Display invalidation info from last invalidation, no change in state",
         progname
     );
     println!("{} verify <invalid> <invalid_hid> <new>  \t Verify key invalidation; 3 pubkeys must be supplied (npub or hex)", progname);
     println!(
-        "{} invsend <relay>  \t Send invalidation event to relay, first do invalidation (with 'inv')",
+            "{} invsend <relay>  \t Send invalidation event to relay, first do invalidation (with 'inv')",
+        progname
+    );
+    println!(
+        "{} listen <relay>  \t Listen for invalidation events from relay, print and verify them",
         progname
     );
     println!();
@@ -96,22 +99,6 @@ fn do_import() {
             },
         };
     }
-}
-
-fn pubkey_string(pk: &XOnlyPublicKey) -> String {
-    format!("{}  ({})", pk.to_bech32().unwrap(), pk.to_string())
-}
-
-fn secret_key_string_short(sk: &SecretKey) -> String {
-    let bech = sk.to_bech32().unwrap();
-    let hex = hex::encode(sk.secret_bytes());
-    format!(
-        "{}..{}  ({}..{})",
-        &bech[0..10],
-        &bech[bech.len() - 6..bech.len()],
-        &hex[0..10],
-        &hex[hex.len() - 6..hex.len()]
-    )
 }
 
 fn print_current(state: &KeyState) {
@@ -229,6 +216,13 @@ async fn do_invsend(relay: &str) {
     }
 }
 
+async fn do_listen(relay: &str) {
+    match Nip41::listen(relay).await {
+        Err(e) => println!("Error: {e}"),
+        Ok(_) => {}
+    }
+}
+
 #[tokio::main]
 async fn main() {
     boiler();
@@ -259,6 +253,14 @@ async fn main() {
                     usage()
                 } else {
                     do_invsend(&args[2]).await;
+                }
+            }
+            "listen" => {
+                if args.len() < 2 + 1 {
+                    println!("Error: missing relay argument");
+                    usage()
+                } else {
+                    do_listen(&args[2]).await;
                 }
             }
             &_ => usage(),
