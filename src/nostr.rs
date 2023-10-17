@@ -137,7 +137,7 @@ impl Nip41 {
     async fn connect(relay: &str) -> Result<Client, Error> {
         let app_keys = Keys::generate();
         let opts = Options::new().wait_for_send(true);
-        let relay_client = Client::new_with_opts(&app_keys, opts);
+        let relay_client = Client::with_opts(&app_keys, opts);
         relay_client.add_relay(relay.to_string(), None).await?;
         relay_client.connect().await;
         println!("Connected to relay {relay}");
